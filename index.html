@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Full Trigger Library Viewer</title>
+    <title>Engine Trigger Analyzer (Angle View)</title>
     <style>
         body {
             background-color: #121212;
@@ -85,13 +85,18 @@
             display: flex;
             align-items: center;
             gap: 15px;
-            height: 40px;
+            height: 45px;
         }
 
         select {
             background: #333; color: #fff; padding: 4px;
-            border: 1px solid #555; border-radius: 4px; min-width: 300px;
+            border: 1px solid #555; border-radius: 4px; min-width: 250px;
             font-size: 12px; font-family: monospace;
+        }
+
+        input[type="number"] {
+            background: #333; color: #fff; border: 1px solid #555; 
+            padding: 4px; width: 60px; border-radius: 4px; text-align: center;
         }
 
         .scroll-wrapper {
@@ -129,17 +134,19 @@
         .status-badge { font-weight: bold; padding: 1px 4px; border-radius: 2px; color: #000; font-size: 10px; }
         .on { opacity: 1; }
         .off { opacity: 0.3; background: #fff !important; }
+
+        .lbl { font-size: 11px; color: #aaa; margin-right: 5px; }
     </style>
 </head>
 <body>
 
 <header>
     <h2>
-        ⚙️ ArduStim Library
+        ⚙️ Trigger Angle Analyzer
         <div class="legend">
-            <span style="background:#00d2ff">CKP (Bit 0)</span>
-            <span style="background:#ffeb3b">CAM 1 (Bit 1)</span>
-            <span style="background:#ff00ff">CAM 2 (Bit 2)</span>
+            <span style="background:#00d2ff">CKP</span>
+            <span style="background:#ffeb3b">CAM 1</span>
+            <span style="background:#ff00ff">CAM 2</span>
         </div>
     </h2>
     <div id="status" style="font-size:11px; color:#aaa;"></div>
@@ -148,9 +155,7 @@
 <div class="main-layout">
     <div class="input-panel">
         <textarea id="bulkCode" spellcheck="false">
-/* TÜM DESENLER BURADA
-   (Senin attığın listenin tamamı)
-*/
+/* TÜM DESENLER BURADA */
 
  const unsigned char dizzy_four_cylinder[] PROGMEM = { 1,0,1,0 };
  const unsigned char dizzy_six_cylinder[] PROGMEM = { 1,0,1,0,1,0 };
@@ -540,7 +545,7 @@
  };
 
         </textarea>
-        <button class="action-btn" onclick="parseAndLoadPatterns()">HEPSİNİ LİSTELE</button>
+        <button class="action-btn" onclick="parseAndLoadPatterns()">LİSTEYİ YENİLE</button>
     </div>
 
     <div class="visualizer-panel">
@@ -548,9 +553,17 @@
             <select id="patternSelect" onchange="renderGraph()">
                 <option value="">-- Veri Yükleniyor... --</option>
             </select>
+            
+            <div style="width:1px; height:20px; background:#444; margin:0 10px;"></div>
+
+            <label class="lbl">Toplam Açı:</label>
+            <input type="number" id="totalDegrees" value="720" onchange="renderGraph()">
+            <label class="lbl" style="margin-left:5px">°</label>
+
             <div style="flex:1"></div>
-            <label style="font-size:12px; color:#aaa;">Zoom:</label>
-            <input type="range" id="zoomRange" min="5" max="150" value="25" style="width:120px;" oninput="renderGraph()">
+            
+            <label class="lbl">Zoom:</label>
+            <input type="range" id="zoomRange" min="5" max="150" value="25" style="width:100px;" oninput="renderGraph()">
         </div>
 
         <div class="scroll-wrapper" id="scrollContainer">
@@ -576,8 +589,6 @@
         patternLibrary = {}; 
         selectBox.innerHTML = "";
         
-        // Regex: C++ Array yapısını yakalar
-        // "unsigned char" anahtar kelimesini özellikle arıyoruz.
         const regex = /const\s+unsigned\s+char\s+(\w+)\[\][^=]*=\s*\{([\s\S]*?)\};/g;
         let match;
         let count = 0;
@@ -585,9 +596,7 @@
         while ((match = regex.exec(text)) !== null) {
             const name = match[1];
             let rawData = match[2];
-            // Yorumları temizle
             rawData = rawData.replace(/\/\*[\s\S]*?\*\/|([^:]|^)\/\/.*$/gm, '');
-            // Sayıları al
             const numbers = rawData.match(/\d+/g);
             
             if (numbers) {
@@ -620,45 +629,37 @@
 
         currentData = patternLibrary[name];
         const stepSize = parseInt(document.getElementById('zoomRange').value);
+        const totalDegrees = parseInt(document.getElementById('totalDegrees').value) || 720;
 
         const totalWidth = currentData.length * stepSize + 100;
         const containerWidth = scrollContainer.clientWidth;
         canvas.width = Math.max(containerWidth, totalWidth);
         
+        // Arkaplan
         ctx.fillStyle = "#050505";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         
-        drawGrid(canvas.width, canvas.height, stepSize);
+        // Grid ve Açılar
+        drawAngleGrid(canvas.width, canvas.height, stepSize, totalDegrees, currentData.length);
 
-        // --- YÜKSEKLİK AYARLARI (İSTEDİĞİN SIRA) ---
-        // ÜST: CRANK (Bit 0) - MAVİ
-        // ORTA: CAM 1 (Bit 1) - SARI
-        // ALT: CAM 2 (Bit 2) - MOR
-        
-        const crankY = 60;   // EN ÜST
-        const cam1Y  = 180;  // ORTA
-        const cam2Y  = 300;  // ALT
-        const h = 40;        // Pulse yüksekliği
+        const crankY = 60;   
+        const cam1Y  = 180;  
+        const cam2Y  = 300;  
+        const h = 40;       
 
         ctx.lineWidth = 2;
-
-        // CHANNEL 1: CRANK (Bit 0 = 1)
-        ctx.strokeStyle = "#00d2ff"; // Cyan
+        ctx.strokeStyle = "#00d2ff";
         drawChannel(currentData, stepSize, crankY, h, 1, "CRANK (CKP)");
 
-        // CHANNEL 2: CAM 1 (Bit 1 = 2)
-        ctx.strokeStyle = "#ffeb3b"; // Yellow
+        ctx.strokeStyle = "#ffeb3b";
         drawChannel(currentData, stepSize, cam1Y, h, 2, "CAM 1");
 
-        // CHANNEL 3: CAM 2 (Bit 2 = 4)
-        ctx.strokeStyle = "#ff00ff"; // Magenta
+        ctx.strokeStyle = "#ff00ff";
         drawChannel(currentData, stepSize, cam2Y, h, 4, "CAM 2");
     }
 
     function drawChannel(data, step, baseY, height, bitMask, label) {
         ctx.beginPath();
-        
-        // İlk değer
         let firstActive = (data[0] & bitMask) !== 0;
         ctx.moveTo(0, firstActive ? baseY : baseY + height);
 
@@ -666,10 +667,7 @@
             let x = i * step;
             let isActive = (data[i] & bitMask) !== 0;
             let y = isActive ? baseY : baseY + height;
-            
-            ctx.lineTo(x + step, y); // Yatay
-            
-            // Dikey (değişim varsa)
+            ctx.lineTo(x + step, y); 
             if (i < data.length - 1) {
                 let nextActive = (data[i+1] & bitMask) !== 0;
                 let nextY = nextActive ? baseY : baseY + height;
@@ -677,23 +675,43 @@
             }
         }
         ctx.stroke();
-
-        // Etiket
         ctx.fillStyle = ctx.strokeStyle;
         ctx.font = "bold 12px Consolas";
         ctx.fillText(label, 10, baseY - 10);
     }
 
-    function drawGrid(w, h, step) {
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        for (let x = 0; x < w; x += step) {
-            ctx.moveTo(x, 0); ctx.lineTo(x, h);
-        }
-        ctx.stroke();
+    function drawAngleGrid(w, h, step, totalDeg, dataCount) {
+        // Derece başına kaç piksel?
+        const pixelsPerDegree = (dataCount * step) / totalDeg;
         
+        ctx.font = "10px Consolas";
+        ctx.lineWidth = 1;
+
+        // Her 90 derece için çizgi
+        for (let d = 0; d <= totalDeg; d += 90) {
+            const x = d * pixelsPerDegree;
+            
+            // Çizgi Rengi (360 ve 720 daha belirgin)
+            if (d % 360 === 0) {
+                ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
+                ctx.setLineDash([]);
+            } else {
+                ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
+                ctx.setLineDash([4, 4]);
+            }
+
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, h);
+            ctx.stroke();
+
+            // Derece Etiketi
+            ctx.fillStyle = "#888";
+            ctx.fillText(d + "°", x + 5, h - 10);
+        }
+
         // Kanal ayraçları
+        ctx.setLineDash([]);
         ctx.strokeStyle = "#333";
         ctx.beginPath();
         ctx.moveTo(0, 130); ctx.lineTo(w, 130);
@@ -705,12 +723,14 @@
         if (!currentData.length) return;
         
         const stepSize = parseInt(document.getElementById('zoomRange').value);
+        const totalDegrees = parseInt(document.getElementById('totalDegrees').value) || 720;
+        
         const rect = canvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const index = Math.floor(x / stepSize);
 
         if (index >= 0 && index < currentData.length) {
-            renderGraph(); // Temizle
+            renderGraph();
 
             const drawX = index * stepSize;
             
@@ -728,6 +748,9 @@
             const isCrank = (val & 1) !== 0;
             const isCam1 = (val & 2) !== 0;
             const isCam2 = (val & 4) !== 0;
+            
+            // Açı Hesabı
+            const currentAngle = ((index / currentData.length) * totalDegrees).toFixed(1);
 
             tooltip.style.display = "block";
             let toolX = e.clientX + 20;
@@ -738,7 +761,7 @@
             
             tooltip.innerHTML = `
                 <div style="font-weight:bold; border-bottom:1px solid #ddd; margin-bottom:5px;">
-                    Index: ${index} | Val: ${val}
+                    ${currentAngle}° <span style="font-weight:normal; color:#aaa">(Idx: ${index})</span>
                 </div>
                 <div class="tt-row ${isCrank ? 'on':'off'}" style="color:#00d2ff">
                     <span>CKP</span> <span class="status-badge" style="background:${isCrank ? '#00d2ff':'#fff'}">${isCrank ? 'HI' : 'LO'}</span>
@@ -758,7 +781,6 @@
         renderGraph();
     });
 
-    // Sayfa açıldığında otomatik yükle
     window.onload = parseAndLoadPatterns;
 
 </script>
